@@ -1,0 +1,473 @@
+// Include the cluster module
+var cluster = require('cluster');
+
+// Code to run if we're in the master process
+if (cluster.isMaster) {
+
+    // Count the machine's CPUs
+    var cpuCount = require('os').cpus().length;
+
+    // Create a worker for each CPU
+    for (var i = 0; i < cpuCount; i += 1) {
+        cluster.fork();
+    }
+
+    // Listen for terminating workers
+    cluster.on('exit', function (worker) {
+
+        // Replace the terminated workers
+        console.log('Worker ' + worker.id + ' died :(');
+        cluster.fork();
+
+    });
+
+// Code to run if we're in a worker process
+} else {
+    var express = require('express');
+    var bodyParser = require('body-parser')
+    var app = express();
+    var http = require('http').Server(app);
+    //var io = require('socket.io')(http);
+    var mongoose = require('mongoose');
+    var cors = require('cors');
+    var AWS = require('aws-sdk');
+    var express = require('express');
+    var bodyParser = require('body-parser');
+    var axios=require('axios');
+    
+
+
+
+    AWS.config.region = process.env.REGION
+
+    var sns = new AWS.SNS();
+    var ddb = new AWS.DynamoDB();
+
+    var ddbTable =  process.env.STARTUP_SIGNUP_TABLE;
+    var snsTopic =  process.env.NEW_SIGNUP_TOPIC;
+    var app = express();
+
+
+    app.use(express.static(__dirname));
+    app.use(bodyParser.json());
+    app.use(bodyParser.urlencoded({extended: false}))
+
+
+    app.use(cors());
+
+      
+
+      var exchangesethaddresslist=mongoose.model('exchangesethaddresslist',{
+        exchange:String,
+        ethaddress:{type:String,unique:true},
+        approved:{type:String,maxlength:1,default:'N'},
+        totaleth:{type:Number},
+        dt:{ type : Date, default: Date.now }
+      })
+      var totalethwithexchangename=mongoose.model('totalethwithexchangename',{
+        exchange:String,
+        totaleth:{type:Number},
+        exported:{type:String,default:'N'},
+        dt:{type:Date, default:Date.now}
+      })
+
+      var exchangesethaddresslistwithnumbers=mongoose.model('exchangesethaddresslistwithnumbers',{
+        exchange:String,
+        ethaddress:{type:String},
+        approved:{type:String,maxlength:1,default:'N'},
+        totaleth:{type:Number},
+        exported:{type:String,default:'N'},
+        dt:{ type : Date, default: Date.now }
+      })
+
+      //backup
+      var backupexchangesethaddresslistwithnumbers=mongoose.model('backupexchangesethaddresslistwithnumbers',{
+        exchange:String,
+        ethaddress:{type:String},
+        approved:{type:String,maxlength:1,default:'N'},
+        totaleth:{type:Number},
+        exported:{type:String,default:'N'},
+        dt:{ type : Date, default: Date.now }
+      })
+      //--------------------
+
+      var hugemovement=mongoose.model('hugemovement',{
+        exchange:String,
+        transferd:{type:Number},
+        dt:{ type : Date, default: Date.now },
+        exported:{type:String,default:'N'}
+      })
+
+      var finalbalofeth=mongoose.model('finalbalofeth',{
+        dt:{ type : Date, default: Date.now },
+        totaleth:{type:Number}
+      })
+
+      var exchangename=mongoose.model('exchangename',{
+        name:{type:String,unique : true}
+      })
+
+      var exchangegroups=mongoose.model('exchangegroups',{
+        name:String,
+        totaleth:{type:Number},
+        dt:{ type : Date, default: Date.now },
+        exported:{type:String,default:'N'}
+      })
+
+      app.get('/',(req,res)=>{
+        console.log('called function')
+        callall()
+        res.send("hello world")
+      })
+
+function timedelay(){
+  return new Promise((resolve,reject)=>{
+ setTimeout(()=>{
+   console.log('time delay')
+   resolve('time delay')    
+  },5000)
+}
+  )
+}
+   async function callall(){
+    console.log('called firststep')
+    await firststep()
+    await timedelay()
+     await secondstep() 
+     await timedelay()
+     await thirdstep()
+     await timedelay()
+     await fourthstep()
+     await timedelay()
+     await fifthstep()
+     /*secondstep()
+     await dosometimepass()
+     await deletetimepassrecords()
+     await thirdstep()
+     await dosometimepass()
+     await fourthstep()
+     //await fifthstep()
+     //await sixthstep()
+     */
+   }
+
+       function firststep(){
+        console.log('firststep')
+     return new Promise((resolve,reject)=>{
+      exchangesethaddresslist.find({}).exec((err,docs)=>{
+        console.log(docs)
+        let ttl=docs.length
+        let i=0
+        let totaleth=0
+        docs.forEach(kk=>{
+          console.log(kk.ethaddress)
+          let exname=kk.exchange
+      let etherscan='https://api.etherscan.io/api?module=account&action=balance&address='+ kk.ethaddress + '&tag=latest&apikey=D4V3HJ75MGT79F39BBPV8A25MQ7EWRSBZD'
+          axios.get(etherscan)
+          .then((kk)=>{
+            i=i+1
+            totaleth+=Math.floor(kk.data.result/1000000000000000000)
+            timedelay().then(()=>{
+              processdata(kk.data.result,exname,kk.data.ethaddress)
+            })
+            
+            console.log('first step i',i,'ttl',ttl)
+           
+            ///for i
+            if(i===ttl){
+              let tdd={            
+                totaleth:totaleth
+                }
+                 
+                '//take total of all the ethereum in the address and store it in finalbalofeth'
+                var ex=new finalbalofeth(tdd)
+                ex.save(err=>{
+                  if(err){
+                    //console.log(err)
+                  }
+                  
+                })
+    
+              resolve('done');
+             }
+             //// for 
+          }
+            ).catch(err=>{
+              reject(err)
+            })
+        })
+
+      
+
+     })
+      })
+
+
+      }
+
+      function processdata(dd,exname,eth){
+        //console.log('called process data'+ ' data' + dd + ' exchange name' +  exname + ' eth add ' +eth)
+        // collect data from etherscan each ethereum addrress and pass it to processdata to save it
+        abc={
+          ethaddress:eth,
+          exchange:exname,
+          totaleth:Math.floor(dd/1000000000000000000),
+          approved:'Y'
+        }
+
+       var ex=new exchangesethaddresslistwithnumbers(abc);
+        ex.save(err=>{
+          //console.log('error msg' +err);
+        })
+        var ex2=new backupexchangesethaddresslistwithnumbers(abc);
+        ex2.save(err=>{
+          console.log('error msg' +err);
+        })
+        
+       // console.log(dd,exname)
+
+      }
+
+      //group the balances of each exchanges addresses and then save it in another db
+       function secondstep(){
+         console.log('second')
+         return new Promise((resolve,reject)=>{
+          exchangesethaddresslistwithnumbers.aggregate(
+            [{
+              $group:{
+                _id:"$exchange",
+                total:{$sum:"$totaleth"}
+              }
+            }]
+           ).then(kk=>{
+   
+            console.log(kk)
+             for(let i=0;i<kk.length;i++){
+               let abc={
+                 name:kk[i]._id,
+                 totaleth:kk[i].total,
+                 exported:'N'
+               }
+               var ex=new exchangegroups(abc);
+                ex.save(err=>{
+                  //console.log('error msg' +err);
+                })
+                console.log('i',i,'ttl',kk.length)
+                if(i===kk.length-1){
+                  resolve('done')
+                }
+             }
+   
+             exchangesethaddresslistwithnumbers.deleteMany({},err=>{
+               //console.log(err)
+             })
+   
+   
+           })
+         })
+          
+      }
+
+      app.get('/addexchange',(req,res)=>{
+        //console.log(req.query.id);
+        //console.log(req.body);
+        abc={
+          name:req.query.id
+        }
+        //console.log(abc);
+        var ex=new exchangename(abc);
+        ex.save(err=>{
+          //console.log('error msg' +err);
+        })
+        res.send('ok')
+
+      })
+
+      //get exchangenames and pass it and group it - the previous balance
+      function thirdstep(){
+        //console.log('third')
+        return new Promise((resolve,reject)=>{
+          exchangename.find().exec((err, docs)=> {
+            let ttl=docs.length
+            let i=0 
+  
+  
+            docs.forEach(kk=>{
+              i=i+1
+              processformongodata(kk.name)// pass each name to a function and process latest balance minus previous balance
+            })
+          //  console.log('i',i,'ttl',ttl)
+            if(i===ttl){
+              resolve('done')
+            }
+             })
+        })
+        
+
+      }
+
+      function processformongodata(exname){
+        //console.log(exname)
+        exchangegroups.find({name:exname}).sort({dt:-1}).limit(50).exec((err,docs)=>{
+         
+            if(docs.length<=0){
+              return 0
+            }
+
+         let firstbal=docs[0].totaleth
+         let finalbal=0
+          let lastbal=docs[docs.length-1].totaleth
+        
+        if(docs.length>1){
+          finalbal =firstbal-lastbal
+        }else{
+          finalbal=0
+        }
+          // then store it
+            let dataformongoose={
+              exchange:docs[0].name,
+              totaleth:finalbal
+            }
+
+            var ex=new totalethwithexchangename(dataformongoose)
+          ex.save(err=>{
+            if(err){
+              //console.log(err)
+            }
+            
+          })
+        })
+      }
+
+      
+
+      function fourthstep(){
+        //console.log('fourth step')
+        return new Promise((resolve,reject)=>{
+          totalethwithexchangename.find({exported:'N'}).sort({dt:-1}).limit(50).exec((err,docs)=>{
+             let totalethall=0;
+   
+           for(let i=0;i<docs.length;i++){
+             //totalethall+=docs[i].totaleth;
+   
+             let dd={
+               name:docs[i].exchange,
+               totaleth:docs[i].totaleth
+             }
+             let url='https://us-central1-ether-51ed0.cloudfunctions.net';
+   
+             axios.post(url+'/exchangesgroup',dd).then(()=>{
+               //console.log(kk)
+             }).catch(err=>{
+               //console.log(err)
+             })
+             //console.log('i ',i, 'docs length ',docs.length)
+             if(i===docs.length-1){
+              totalethwithexchangename.updateMany({},{exported:'Y'},{multi:true},(err,dcc)=>{
+                if(err){
+                  console.log(err)
+                }
+                
+              })
+              resolve('done')
+             }
+   
+           }
+   
+   
+   
+           })
+        })
+        
+        }
+
+        function fifthstep(){
+          return new Promise((resolve,reject)=>{
+            finalbalofeth.find({}).sort({dt:-1}).limit(50).exec((err,docs)=>{
+               
+     
+             
+               //totalethall+=docs[i].totaleth;
+              let finalbal=0
+              
+               if(docs.length>1){
+                finalbal=docs[0].totaleth-docs[docs.length-1].totaleth
+               }else{
+                 finalbal=0// docs[0].totaleth
+               }
+               let dd={                 
+                totalethall:finalbal
+              }
+              
+               let url='https://us-central1-ether-51ed0.cloudfunctions.net';
+     
+               axios.post(url+'/allexchangesurl',dd).then(()=>{
+                resolve('done')  //console.log(kk)
+               }).catch(err=>{
+                 //console.log(err)
+               })
+              
+             })
+          })       
+
+        }
+
+        
+      app.get('/getexchangenames',(req,res)=>{
+
+           exchangename.find().exec((err, docs)=> {
+           //  console.log(docs);
+           res.send(docs);
+               //res.json(docs);
+            });
+           });
+
+
+           app.post('/addaddress',(req,res)=>{
+
+            let abc={
+            exchange:req.body.name,
+            ethaddress:req.body.eth
+            }
+            
+            console.log(abc);
+            var ex=new exchangesethaddresslist(abc)
+            ex.save(err=>{
+            if(err){
+            console.log(err)
+            }
+            
+            })
+            
+            })
+            
+
+      app.post('/addchat',(req,res)=>{
+        //console.log(req.body);
+        let abc={
+          name:req.body.name,
+          msg:req.body.msg,
+          dt:new Date()
+        }
+        res.send(abc)
+      })
+      app.get('/tempupdate',(req,res)=>{
+        exchangegroup.updateMany({},{exported:'N'},{multi:true},(err,dcc)=>{
+          //console.log(err)
+        })
+      })
+
+      var dbUrl = 'mongodb://amin:gandmasti1234@ds133981.mlab.com:33981/a1'
+    mongoose
+            .connect(dbUrl,{useNewUrlParser:true, useCreateIndex: true})
+            .then(() => console.log('MongoDB Connected'))
+            .catch(err => console.log(err));
+
+
+            var port = process.env.PORT || 3000;
+
+            var server = app.listen(port, function () {
+                console.log('Server running at http://127.0.0.1:' + port + '/');
+            });
+
+          }
